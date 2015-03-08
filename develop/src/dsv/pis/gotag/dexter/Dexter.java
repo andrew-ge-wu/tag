@@ -32,6 +32,9 @@ import java.util.UUID;
 public class Dexter implements Serializable {
 
     private final UUID uuid = UUID.randomUUID();
+
+    private boolean tagged;
+
     /**
      * The string name of the Bailiff service interface, used when
      * querying the Jini lookup server.
@@ -273,6 +276,20 @@ public class Dexter implements Serializable {
 
     public UUID getUuid() {
         return uuid;
+    }
+
+    public synchronized boolean tag() {
+        if (!tagged) {
+            tagged = true;
+        }
+        return tagged;
+    }
+
+    private synchronized boolean passTag(Dexter toTag) {
+        if (tagged && toTag.tag()) {
+            tagged = false;
+        }
+        return !tagged;
     }
 
     /**
