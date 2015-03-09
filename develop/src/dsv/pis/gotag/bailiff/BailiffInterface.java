@@ -5,8 +5,9 @@
 
 package dsv.pis.gotag.bailiff;
 
-import dsv.pis.gotag.dexter.Dexter;
+import dsv.pis.gotag.IdentifiedAgent;
 
+import java.rmi.RemoteException;
 import java.util.Map;
 import java.util.UUID;
 
@@ -17,13 +18,19 @@ import java.util.UUID;
 public interface BailiffInterface
         extends
         java.rmi.Remote {
+
+
+    public UUID getUUID()
+            throws
+            RemoteException;
+
     /**
      * Returns a string which confirms communication with the Bailiff
      * service instance.
      */
     public String ping()
             throws
-            java.rmi.RemoteException;
+            RemoteException;
 
     /**
      * Returns a property of the Bailiff.
@@ -33,7 +40,7 @@ public interface BailiffInterface
      */
     public String getProperty(String key)
             throws
-            java.rmi.RemoteException;
+            RemoteException;
 
     /**
      * The entry point for mobile code.
@@ -46,19 +53,25 @@ public interface BailiffInterface
      * @param args The parameters for the callback method. Note that if
      *             the method has a signature without arguments the value of args
      *             should be an empty array. Setting args to null will not work.
-     * @throws java.rmi.RemoteException        Thrown if there is an RMI problem.
+     * @throws RemoteException                 Thrown if there is an RMI problem.
      * @throws java.lang.NoSuchMethodException Thrown if the proposed
      *                                         callback is not found (which happen if the name is spelled wrong,
      *                                         the number of arguments is wrong or are of the wrong type).
      */
-    public void migrate(Dexter obj, String cb, Object[] args)
+    public void migrate(IdentifiedAgent obj, String cb, Object[] args)
             throws
-            java.rmi.RemoteException,
+            RemoteException,
             java.lang.NoSuchMethodException;
 
-    public Map<UUID, Dexter> getRunningChildren()
+    public Map<UUID, IdentifiedAgent> getRunningChildren(IdentifiedAgent who)
             throws
-            java.rmi.RemoteException,
+            RemoteException,
             java.lang.NoSuchMethodException;
+
+    public void leave(IdentifiedAgent who)
+            throws
+            RemoteException,
+            java.lang.NoSuchMethodException;
+
 
 }

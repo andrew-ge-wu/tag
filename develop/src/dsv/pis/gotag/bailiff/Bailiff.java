@@ -6,10 +6,11 @@
 
 package dsv.pis.gotag.bailiff;
 
-import dsv.pis.gotag.dexter.Dexter;
+import dsv.pis.gotag.IdentifiedAgent;
 import dsv.pis.gotag.util.CmdlnOption;
 import dsv.pis.gotag.util.Commandline;
 import dsv.pis.gotag.util.Logger;
+import dsv.pis.gotag.util.Sleeper;
 import net.jini.core.entry.Entry;
 import net.jini.core.lookup.ServiceID;
 import net.jini.lookup.JoinManager;
@@ -18,9 +19,11 @@ import net.jini.lookup.entry.Location;
 import net.jini.lookup.entry.Name;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.rmi.RMISecurityManager;
 import java.rmi.RemoteException;
+import java.rmi.server.UnicastRemoteObject;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -46,10 +49,11 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class Bailiff
         extends
-        java.rmi.server.UnicastRemoteObject    // for RMI
+        UnicastRemoteObject    // for RMI
         implements
-        dsv.pis.gotag.bailiff.BailiffInterface // for clients
+        BailiffInterface // for clients
 {
+    public static final int OPT_DELAY = 3000;
     protected boolean debug = false;
     protected Logger log;
     protected String user;
@@ -58,7 +62,8 @@ public class Bailiff
     protected Map propertyMap;
     protected JoinManager bf_joinmanager;
     protected InetAddress myInetAddress;
-    private Map<UUID, Dexter> children = new ConcurrentHashMap<UUID, Dexter>();
+    protected final Map<UUID, IdentifiedAgent> children = new ConcurrentHashMap<>();
+    private final UUID uuid = UUID.randomUUID();
 
     protected void debugMsg(String s) {
         if (debug) {
@@ -143,24 +148,23 @@ public class Bailiff
      * This class wraps and encapsulates the remote object to which the
      * Bailiff lends a thread of execution.
      */
-    private class agitator extends Thread {
+    private class Agitator extends Thread {
 
-        protected Object myObj;    // The client object
-        protected String myCb;    // The name of the entry point method
-        protected Object[] myArgs;    // Arguments to the entry point method
-        protected java.lang.reflect.Method myMethod; // Ref. to entry point method
-        protected Class[] myParms; // Class reflection of arguments
+        private final String myCb;
+        private final Object[] myArgs;
+        private final IdentifiedAgent myObj;    // The client object
+        private final Class[] myParms;
+        private Method myMethod;
+
 
         /**
          * Creates a new agitator by copying th references to the client
          * object, the name of the entry method and the arguments to
          * the entry method.
          *
-         * @param obj  The client object, holding the method to execute
-         * @param cb   The name of the entry point method (callback)
-         * @param args Arguments to the entry point method
+         * @param obj The client object, holding the method to execute
          */
-        public agitator(Object obj, String cb, Object[] args) {
+        public Agitator(IdentifiedAgent obj, String cb, Object[] args) {
             myObj = obj;
             myCb = cb;
             myArgs = args;
@@ -210,6 +214,11 @@ public class Bailiff
 
 
     // In BailiffInterface:
+
+    @Override
+    public UUID getUUID() throws RemoteException {
+        return this.uuid;
+    }
 
     /**
      * Returns a string acknowledging the host, IP address, room and user
@@ -278,7 +287,7 @@ public class Bailiff
      * @throws NoSuchMethodException Thrown if the specified entry method
      *                               does not exist with the expected signature.
      */
-    public void migrate(Object obj, String cb, Object[] args)
+    public void migrate(IdentifiedAgent obj, String cb, Object[] args)
             throws
             java.rmi.RemoteException,
             java.lang.NoSuchMethodException {
@@ -286,14 +295,35 @@ public class Bailiff
             log.entry("<migrate obj=\"" + obj + "\" cb=\"" + cb
                     + "\" args=\"" + args + "\"/>");
         }
-        agitator agt = new agitator(obj, cb, args);
+        notifyAllAgents(IdentifiedAgent.NotificationType.JOINING, obj);
+        children.put(obj.getUUID(), obj);
+        Sleeper.sleep(OPT_DELAY / 10, OPT_DELAY / 4);
+        System.out.println("Agent:" + obj.getUUID() + " is joining, current running:" + children.size());
+        Agitator agt = new Agitator(obj, cb, args);
         agt.initialize();
         agt.start();
     }
 
     @Override
-    public Map<UUID, Dexter> getRunningChildren() throws RemoteException, NoSuchMethodException {
+    public Map<UUID, IdentifiedAgent> getRunningChildren(IdentifiedAgent who) throws RemoteException, NoSuchMethodException {
+        notifyAllAgents(IdentifiedAgent.NotificationType.LISTING, who);
+        Sleeper.sleep(OPT_DELAY / 10, OPT_DELAY / 4);
+        System.out.println("Agent:" + who.getUUID() + " is listing agents and " + children.size() + " will return.");
         return children;
+    }
+
+    @Override
+    public void leave(IdentifiedAgent who) throws RemoteException, NoSuchMethodException {
+        notifyAllAgents(IdentifiedAgent.NotificationType.LEAVING, who);
+        Sleeper.sleep(OPT_DELAY / 10, OPT_DELAY / 4);
+        System.out.println("Agent:" + who.getUUID() + " is leaving");
+        children.remove(who.getUUID());
+    }
+
+    private void notifyAllAgents(IdentifiedAgent.NotificationType type, IdentifiedAgent byWho) {
+        for (IdentifiedAgent identifiedAgent : children.values()) {
+            identifiedAgent.notify(type, byWho);
+        }
     }
 
     /**
@@ -310,14 +340,12 @@ public class Bailiff
      *              configured to accept entries. If log is null a default Logger instance
      *              is created.
      * @throws RemoteException
-     * @throws UnknownHostException Thrown if the local host address can not
-     *                              be determined.
-     * @throws IOException          Thrown if there is an I/O problem.
+     * @throws java.net.UnknownHostException Thrown if the local host address can not
+     *                                       be determined.
+     * @throws IOException                   Thrown if there is an I/O problem.
      */
     public Bailiff(String room, String user, boolean debug, Logger log)
             throws
-            java.rmi.RemoteException,
-            java.net.UnknownHostException,
             java.io.IOException {
         this.log = (log == null) ? new Logger() : log;
         this.user = user;
@@ -382,18 +410,13 @@ public class Bailiff
      * to the Bailiff. There may also be agitator threads active. Some house-
      * holding counters and a shutdown method are attractive extensions.
      *
-     * @param args The array of commandline strings, Java standard.
      * @throws java.net.UnknownHostException Thrown if the name of the
      *                                       local host cannot be obtained.
      * @throws java.rmi.RemoteException      Thrown if there is a RMI problem.
      * @throws java.io.IOException           Thrown if discovery/join could not start.
-     * @see BailiffServiceID
-     * @see Bailiff_svc
      */
     public static void main(String[] argv)
             throws
-            java.net.UnknownHostException,
-            java.rmi.RemoteException,
             java.io.IOException {
         String room = "anywhere";
         String user = System.getProperty("user.name");
@@ -425,7 +448,7 @@ public class Bailiff
             System.exit(1);
         }
 
-        if (helpOption.getIsSet() == true) {
+        if (helpOption.getIsSet()) {
             System.out.println
                     ("Usage: [-room room][-user user][-debug][-log [logfile]]");
             System.out.print("Where room is location of the service ");
@@ -450,17 +473,17 @@ public class Bailiff
 
         debug = debugOption.getIsSet();
 
-        if (roomOption.getIsSet() == true) {
+        if (roomOption.getIsSet()) {
             room = roomOption.getValue().toLowerCase();
         }
 
-        if (userOption.getIsSet() == true) {
+        if (userOption.getIsSet()) {
             user = userOption.getValue().toLowerCase();
         }
 
         Logger log;
 
-        if (logOption.getIsSet() == true) {
+        if (logOption.getIsSet()) {
             String lg = logOption.getValue();
             log =
                     (lg != null) ? new Logger(lg, true) : new Logger(".", "Bailiff");
@@ -471,7 +494,7 @@ public class Bailiff
         // Set the RMI security manager.
         System.setSecurityManager(new RMISecurityManager());
         Bailiff bf = new Bailiff(room, user, debug, log);
-        if (noFrameOption.getIsSet() == false) {
+        if (!noFrameOption.getIsSet()) {
             BailiffFrame bff = new BailiffFrame(bf);
         }
     } // main

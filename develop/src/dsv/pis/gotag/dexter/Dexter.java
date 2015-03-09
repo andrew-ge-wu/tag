@@ -9,9 +9,11 @@
 
 package dsv.pis.gotag.dexter;
 
+import dsv.pis.gotag.IdentifiedAgent;
 import dsv.pis.gotag.bailiff.BailiffInterface;
 import dsv.pis.gotag.util.CmdlnOption;
 import dsv.pis.gotag.util.Commandline;
+import dsv.pis.gotag.util.Sleeper;
 import net.jini.core.lookup.ServiceItem;
 import net.jini.core.lookup.ServiceTemplate;
 import net.jini.lookup.ServiceDiscoveryManager;
@@ -21,19 +23,20 @@ import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.Serializable;
-import java.util.Random;
-import java.util.UUID;
+import java.rmi.RemoteException;
+import java.util.*;
 
 /**
  * Dexter jumps around randomly among the Bailiffs. He is can be used
  * test that the system is operating, or as a template for more
  * evolved agents.
  */
-public class Dexter implements Serializable {
+public class Dexter implements IdentifiedAgent, Serializable {
+    public static final int OPT_DELAY = 3000;
 
     private final UUID uuid = UUID.randomUUID();
 
-    private boolean tagged;
+    private boolean tagged = false;
 
     /**
      * The string name of the Bailiff service interface, used when
@@ -82,16 +85,17 @@ public class Dexter implements Serializable {
      * instantiate the service template.
      *
      * @param debug True if this instance is being debugged.
+     * @param tag
      * @throws ClassNotFoundException Thrown if the class for the Bailiff
      *                                service interface could not be found.
      */
-    public Dexter(boolean debug, boolean noFace)
+    public Dexter(boolean debug, boolean noFace, boolean tag)
             throws
             java.lang.ClassNotFoundException {
         if (this.debug == false) this.debug = debug;
 
         this.noFace = noFace;
-
+        this.tagged = tag;
         // This service template is used to query the Jini lookup server
         // for services which implement the BailiffInterface. The string
         // name of that interface is passed in the bfi argument. At this
@@ -106,18 +110,6 @@ public class Dexter implements Serializable {
     }
 
     /**
-     * Sleep snugly and safely not bothered by interrupts.
-     *
-     * @param ms The number of milliseconds to sleep.
-     */
-    protected void snooze(long ms) {
-        try {
-            Thread.currentThread().sleep(ms);
-        } catch (java.lang.InterruptedException e) {
-        }
-    }
-
-    /**
      * This is Dexter's main program once he is on his way. In short, he
      * gets himself a service discovery manager and asks it about Bailiffs.
      * If the list is long enough, he then selects one randomly and pings it.
@@ -127,7 +119,7 @@ public class Dexter implements Serializable {
      */
     public void topLevel()
             throws
-            java.io.IOException {
+            java.io.IOException, InterruptedException {
         Random rnd = new Random();
 
         // Create a Jini service discovery manager to help us interact with
@@ -153,131 +145,24 @@ public class Dexter implements Serializable {
             f.setVisible(true);
             dexFace.startAnimation();
         }
-
         for (; ; ) {
-
-            ServiceItem[] svcItems;
-
-            long retryInterval = 0;
-
-            // The restraint sleep is just there so we don't get hyperactive
-            // and confuse the slow human beings.
-
-            debugMsg("Entering restraint sleep.");
-
-            snooze(5000);
-
-            debugMsg("Leaving restraint sleep.");
-
-            // Enter a loop in which Dexter tries to find some Bailiffs.
-
-            do {
-
-                if (0 < retryInterval) {
-                    debugMsg("No Bailiffs detected - sleeping.");
-                    snooze(retryInterval);
-                    debugMsg("Waking up.");
+            Sleeper.sleep(OPT_DELAY / 4, OPT_DELAY);
+            BailiffInterface target = getBailiffToMove();
+            if (target != null) {
+                if (migrateTo(target) && !noFace && dexFace != null) {
+                    dexFace.stopAnimation();
+                    f.setVisible(false);
                 }
-
-                // Put our query, expressed as a service template, to the Jini
-                // service discovery manager.
-
-                svcItems = SDM.lookup(bailiffTemplate, 8, null);
-                retryInterval = 20 * 1000;
-
-                // If no lookup servers are found, go back up to the beginning
-                // of the loop, sleep a bit and then try again.
-            } while (svcItems.length == 0);
-
-            // We have the Bailiffs.
-
-            debugMsg("Found " + svcItems.length + " Bailiffs.");
-
-            // Now enter a loop in which we try to ping and migrate to them.
-
-            int nofItems = svcItems.length;
-
-            // While we still have at least one Bailiff service to try...
-
-            while (0 < nofItems) {
-
-                // Select one Bailiff randomly.
-
-                int idx = 0;
-                if (1 < nofItems) {
-                    idx = rnd.nextInt(nofItems);
-                }
-
-                boolean accepted = false;        // Assume it will fail
-                Object obj = svcItems[idx].service; // Get the service object
-                BailiffInterface bfi = null;
-
-                // Try to ping the selected Bailiff.
-
-                debugMsg("Trying to ping...");
-
-                try {
-                    if (obj instanceof BailiffInterface) {
-                        bfi = (BailiffInterface) obj;
-                        String response = bfi.ping(); // Ping it
-                        debugMsg(response);
-                        accepted = true;    // Oh, it worked!
-                    }
-                } catch (java.rmi.RemoteException e) { // Ping failed
-                    if (debug) {
-                        e.printStackTrace();
-                    }
-                }
-
-                debugMsg(accepted ? "Accepted." : "Not accepted.");
-
-                // If the ping failed, delete that Bailiff from the array and
-                // try another. The current (idx) entry in the list of service items
-                // is replaced by the last item in the list, and the list length
-                // is decremented by one.
-
-                if (accepted == false) {
-                    svcItems[idx] = svcItems[nofItems - 1];
-                    nofItems -= 1;
-                    continue;        // Back to top of while-loop.
-                } else {
-
-                    debugMsg("Trying to jump...");
-
-                    // This is the spot where Dexter tries to migrate.
-
-                    try {
-                        bfi.migrate(this, "topLevel", new Object[]{});
-                        SDM.terminate();    // SUCCESS
-                        if (!noFace) {
-                            dexFace.stopAnimation();
-                            f.setVisible(false);
-                        }
-                        return;        // SUCCESS
-                    } catch (java.rmi.RemoteException e) { // FAILURE
-                        if (debug) {
-                            e.printStackTrace();
-                        }
-                    } catch (java.lang.NoSuchMethodException e) { // FAILURE
-                        if (debug) {
-                            e.printStackTrace();
-                        }
-                    }
-
-                    debugMsg("Didn't make the jump...");
-
-                }
-            }    // while there are candidates left
-
-            debugMsg("They were all bad.");
-
+            }
         } // for ever // go back up and try to find more Bailiffs
     }
 
-    public UUID getUuid() {
+    @Override
+    public UUID getUUID() {
         return uuid;
     }
 
+    @Override
     public synchronized boolean tag() {
         if (!tagged) {
             tagged = true;
@@ -285,11 +170,147 @@ public class Dexter implements Serializable {
         return tagged;
     }
 
-    private synchronized boolean passTag(Dexter toTag) {
+    @Override
+    public synchronized boolean passTag(Dexter toTag) {
         if (tagged && toTag.tag()) {
             tagged = false;
         }
         return !tagged;
+    }
+
+    @Override
+    public boolean isTagged() {
+        return tagged;
+    }
+
+    @Override
+    public void notify(NotificationType type, IdentifiedAgent who) {
+    }
+
+
+    private Set<BailiffInterface> getBailiffs() {
+        Set<BailiffInterface> toReturn;
+        int retryInterval = 0;
+        ServiceItem[] svcItems;
+        do {
+
+            if (0 < retryInterval) {
+                debugMsg("No Bailiffs detected - sleeping.");
+                Sleeper.sleep(retryInterval);
+                debugMsg("Waking up.");
+            }
+
+            // Put our query, expressed as a service template, to the Jini
+            // service discovery manager.
+
+            svcItems = SDM.lookup(bailiffTemplate, 8, null);
+            retryInterval = 20 * 1000;
+
+            // If no lookup servers are found, go back up to the beginning
+            // of the loop, sleep a bit and then try again.
+        } while (svcItems.length == 0);
+        toReturn = new HashSet<>(svcItems.length);
+        for (ServiceItem eachItem : svcItems) {
+            Object obj = eachItem.service;
+            if (obj instanceof BailiffInterface) {
+                try {
+                    BailiffInterface bailiff = BailiffInterface.class.cast(obj);
+                    String result = bailiff.ping();
+                    debugMsg(result);
+                    toReturn.add(bailiff);
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        return toReturn;
+    }
+
+    private BailiffInterface getContainer() throws NoSuchMethodException, RemoteException {
+        Set<BailiffInterface> toChose = getBailiffs();
+        for (BailiffInterface option : toChose) {
+            if (option.getRunningChildren(this).containsKey(getUUID())) {
+                return option;
+            }
+        }
+        System.out.println("Non of the bailiffs contains me? ID:" + getUUID());
+        return null;
+    }
+
+
+    private boolean migrateTo(BailiffInterface migrateTo) {
+        debugMsg("Trying to jump...");
+        // This is the spot where Dexter tries to migrate.
+        try {
+            BailiffInterface parent = getContainer();
+            if (parent != null) {
+                parent.leave(this);
+            }
+            migrateTo.migrate(this, "topLevel", new Object[]{});
+            SDM.terminate();    // SUCCESS
+            return true;
+        } catch (java.rmi.RemoteException | NoSuchMethodException e) { // FAILURE
+            if (debug) {
+                e.printStackTrace();
+            }
+        }
+        debugMsg("Didn't make the jump...");
+        return false;
+    }
+
+
+    private BailiffInterface getBailiffToMove() {
+        Set<BailiffInterface> toChose = getBailiffs();
+        BailiffInterface toReturn = null;
+        StringBuilder stringBuilder = new StringBuilder("Agent:" + getUUID() + " is ");
+        for (BailiffInterface option : toChose) {
+            try {
+                if (tagged) {
+                    stringBuilder.append("looking for agent to tag");
+                    Map<UUID, IdentifiedAgent> optionChildren = option.getRunningChildren(this);
+                    if (!optionChildren.containsKey(getUUID()) && (toReturn == null || toReturn.getRunningChildren(this).size() < optionChildren.size())) {
+                        toReturn = option;
+                    }
+                } else {
+                    stringBuilder.append("running away");
+                    boolean containsTagged = false;
+                    Map<UUID, IdentifiedAgent> optionChildren = option.getRunningChildren(this);
+                    for (IdentifiedAgent eachChild : optionChildren.values()) {
+                        if (eachChild.isTagged()) {
+                            containsTagged = true;
+                            break;
+                        }
+                    }
+                    if (!containsTagged && (toReturn == null || optionChildren.size() < toReturn.getRunningChildren(this).size())) {
+                        toReturn = option;
+                    }
+                }
+            } catch (RemoteException | NoSuchMethodException e) {
+                e.printStackTrace();
+            }
+        }
+        try {
+            if (toReturn != null) {
+                Map<UUID, IdentifiedAgent> targetChildren = toReturn.getRunningChildren(this);
+                if (targetChildren.containsKey(getUUID())) {
+                    stringBuilder.append(", no changing bailiff");
+                    System.out.println(stringBuilder.toString());
+                    return null;
+                } else {
+                    stringBuilder.append(", final target:").append(toReturn.ping());
+                    stringBuilder.append("\nNew host contains");
+                    for (UUID agent : targetChildren.keySet()) {
+                        stringBuilder.append("\n").append(agent);
+                    }
+                    System.out.println(stringBuilder.toString());
+                    return toReturn;
+                }
+            } else {
+                return null;
+            }
+        } catch (RemoteException | NoSuchMethodException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
@@ -298,13 +319,15 @@ public class Dexter implements Serializable {
     public static void main(String[] argv)
             throws
             java.lang.ClassNotFoundException,
-            java.io.IOException {
+            java.io.IOException, InterruptedException {
         CmdlnOption helpOption = new CmdlnOption("-help");
         CmdlnOption debugOption = new CmdlnOption("-debug");
         CmdlnOption noFaceOption = new CmdlnOption("-noface");
+        CmdlnOption tagOption = new CmdlnOption("-tag");
+
 
         CmdlnOption[] opts =
-                new CmdlnOption[]{helpOption, debugOption, noFaceOption};
+                new CmdlnOption[]{helpOption, debugOption, noFaceOption, tagOption};
 
         String[] restArgs = Commandline.parseArgs(System.out, argv, opts);
 
@@ -312,7 +335,7 @@ public class Dexter implements Serializable {
             System.exit(1);
         }
 
-        if (helpOption.getIsSet() == true) {
+        if (helpOption.getIsSet()) {
             System.out.println("Usage: [-help]|[-debug][-noface]");
             System.out.println("where -help shows this message");
             System.out.println("      -debug turns on debugging.");
@@ -322,10 +345,11 @@ public class Dexter implements Serializable {
 
         boolean debug = debugOption.getIsSet();
         boolean noFace = noFaceOption.getIsSet();
+        boolean tag = tagOption.getIsSet();
 
         // We will try without it first
         // System.setSecurityManager (new RMISecurityManager ());
-        Dexter dx = new Dexter(debug, noFace);
+        Dexter dx = new Dexter(debug, noFace, tag);
         dx.topLevel();
         System.exit(0);
     }

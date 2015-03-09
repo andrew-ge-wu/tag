@@ -19,11 +19,6 @@ echo "TOOLJAR=$TOOLJAR"
 echo "PORT=$PORT"
 echo "WWWROOT=$WWWROOT"
 
-cat > httpd.cfg <<EOF
-# Autoscript by $0
-CODEBASE="http://$(hostname):${PORT}"
-EOF
-
 unset CLASSPATH
 
 exec java -jar $TOOLJAR -port $PORT -dir $WWWROOT

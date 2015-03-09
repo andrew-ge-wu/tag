@@ -7,7 +7,9 @@
 
 package dsv.pis.gotag.deedee;
 
+import dsv.pis.gotag.IdentifiedAgent;
 import dsv.pis.gotag.bailiff.BailiffInterface;
+import dsv.pis.gotag.dexter.Dexter;
 import net.jini.core.entry.Entry;
 import net.jini.core.lookup.ServiceItem;
 import net.jini.core.lookup.ServiceTemplate;
@@ -19,13 +21,14 @@ import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.Serializable;
+import java.util.UUID;
 
 /**
  * Deedee is a messenger agent. She looks for Bailiffs (execution services)
  * registered to a particular user (started with the -user switch).
  * When she finds one, she migrates there and pops a dialogue with her message.
  */
-public class Deedee implements Serializable {
+public class Deedee implements Serializable ,IdentifiedAgent{
 
     /**
      * The service discovery manager helps us locating Jini lookup servers
@@ -219,5 +222,25 @@ public class Deedee implements Serializable {
                 300000);
         de.topLevel();
         System.exit(0);
+    }
+
+    @Override
+    public UUID getUUID() {
+        return null;  //TODO:To be fixed
+    }
+
+    @Override
+    public boolean tag() {
+        return false;  //TODO:To be fixed
+    }
+
+    @Override
+    public boolean passTag(Dexter toTag) {
+        return false;  //TODO:To be fixed
+    }
+
+    @Override
+    public boolean isTagged() {
+        return false;  //TODO:To be fixed
     }
 }
