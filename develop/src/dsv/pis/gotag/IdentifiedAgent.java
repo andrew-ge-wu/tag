@@ -1,6 +1,6 @@
 package dsv.pis.gotag;
 
-import dsv.pis.gotag.dexter.Dexter;
+import dsv.pis.gotag.bailiff.BailiffInterface;
 
 import java.util.UUID;
 
@@ -16,7 +16,7 @@ public interface IdentifiedAgent {
 
     boolean tag();
 
-    boolean passTag(Dexter toTag);
+    boolean passTag(BailiffInterface container,IdentifiedAgent toTag);
 
     boolean isTagged();
 

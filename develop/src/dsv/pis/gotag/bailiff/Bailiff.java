@@ -53,7 +53,7 @@ public class Bailiff
         implements
         BailiffInterface // for clients
 {
-    public static final int OPT_DELAY = 3000;
+    public static final int OPT_DELAY = 1000;
     protected boolean debug = false;
     protected Logger log;
     protected String user;
@@ -203,6 +203,7 @@ public class Bailiff
          */
         public void run() {
             try {
+                Sleeper.sleep(OPT_DELAY / 10, OPT_DELAY / 4);
                 myMethod.invoke(myObj, myArgs);
             } catch (Throwable t) {
                 if (debug) {
@@ -297,7 +298,6 @@ public class Bailiff
         }
         notifyAllAgents(IdentifiedAgent.NotificationType.JOINING, obj);
         children.put(obj.getUUID(), obj);
-        Sleeper.sleep(OPT_DELAY / 10, OPT_DELAY / 4);
         System.out.println("Agent:" + obj.getUUID() + " is joining, current running:" + children.size());
         Agitator agt = new Agitator(obj, cb, args);
         agt.initialize();
@@ -307,8 +307,6 @@ public class Bailiff
     @Override
     public Map<UUID, IdentifiedAgent> getRunningChildren(IdentifiedAgent who) throws RemoteException, NoSuchMethodException {
         notifyAllAgents(IdentifiedAgent.NotificationType.LISTING, who);
-        Sleeper.sleep(OPT_DELAY / 10, OPT_DELAY / 4);
-        System.out.println("Agent:" + who.getUUID() + " is listing agents and " + children.size() + " will return.");
         return children;
     }
 
@@ -318,6 +316,20 @@ public class Bailiff
         Sleeper.sleep(OPT_DELAY / 10, OPT_DELAY / 4);
         System.out.println("Agent:" + who.getUUID() + " is leaving");
         children.remove(who.getUUID());
+    }
+
+
+    @Override
+    public synchronized boolean tag(UUID from, UUID to) {
+        if (children.containsKey(from) && children.containsKey(to)
+                && children.get(from).isTagged() && !children.get(to).isTagged()) {
+            IdentifiedAgent fromChild = children.get(from);
+            IdentifiedAgent toChild = children.get(to);
+            fromChild.passTag(this, toChild);
+            return toChild.isTagged();
+        } else {
+            return false;
+        }
     }
 
     private void notifyAllAgents(IdentifiedAgent.NotificationType type, IdentifiedAgent byWho) {

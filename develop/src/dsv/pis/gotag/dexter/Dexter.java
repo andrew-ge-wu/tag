@@ -25,6 +25,7 @@ import java.awt.event.WindowEvent;
 import java.io.Serializable;
 import java.rmi.RemoteException;
 import java.util.*;
+import java.util.List;
 
 /**
  * Dexter jumps around randomly among the Bailiffs. He is can be used
@@ -32,11 +33,11 @@ import java.util.*;
  * evolved agents.
  */
 public class Dexter implements IdentifiedAgent, Serializable {
-    public static final int OPT_DELAY = 3000;
+    public static final int OPT_DELAY = 1000;
 
     private final UUID uuid = UUID.randomUUID();
 
-    private boolean tagged = false;
+    private volatile boolean tagged = false;
 
     /**
      * The string name of the Bailiff service interface, used when
@@ -68,6 +69,7 @@ public class Dexter implements IdentifiedAgent, Serializable {
      * template IS serializable so Dexter only needs to instantiate it once.
      */
     protected ServiceTemplate bailiffTemplate;
+    private List<BailiffInterface> bailiffs;
 
     /**
      * Outputs a diagnostic message on standard output. This will be on
@@ -120,8 +122,6 @@ public class Dexter implements IdentifiedAgent, Serializable {
     public void topLevel()
             throws
             java.io.IOException, InterruptedException {
-        Random rnd = new Random();
-
         // Create a Jini service discovery manager to help us interact with
         // the Jini lookup service.
         SDM = new ServiceDiscoveryManager(null, null);
@@ -145,16 +145,42 @@ public class Dexter implements IdentifiedAgent, Serializable {
             f.setVisible(true);
             dexFace.startAnimation();
         }
-        for (; ; ) {
-            Sleeper.sleep(OPT_DELAY / 4, OPT_DELAY);
-            BailiffInterface target = getBailiffToMove();
-            if (target != null) {
-                if (migrateTo(target) && !noFace && dexFace != null) {
-                    dexFace.stopAnimation();
-                    f.setVisible(false);
+        try {
+            this.bailiffs = getBailiffs();
+            BailiffInterface container = getContainer(bailiffs);
+            if (tagged) {
+                if (container != null) {
+                    do {
+                        Map<UUID, IdentifiedAgent> children = container.getRunningChildren(this);
+                        children.remove(getUUID());
+                        if (children.size() > 0) {
+                            ArrayList<IdentifiedAgent> toTagFrom = new ArrayList<>(children.values());
+                            Collections.shuffle(toTagFrom);
+                            if (container.tag(getUUID(), toTagFrom.get(0).getUUID())) {
+                                System.out.println("Successfully tagged!");
+                            } else {
+                                System.out.println("Failed to tag!");
+                            }
+                        }
+                    }
+                    while (tagged && container.getRunningChildren(this).size() > 1);
                 }
             }
-        } // for ever // go back up and try to find more Bailiffs
+            while (true) {
+                container = getContainer(bailiffs);
+                if (container != null) Sleeper.sleep(OPT_DELAY / 4, OPT_DELAY);
+                if (move(container, bailiffs)) {
+                    if (!noFace && dexFace != null) {
+                        dexFace.stopAnimation();
+                        f.setVisible(false);
+
+                    }
+                    return;
+                }
+            } // for ever // go back up and try to find more Bailiffs
+        } catch (NoSuchMethodException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -163,17 +189,20 @@ public class Dexter implements IdentifiedAgent, Serializable {
     }
 
     @Override
-    public synchronized boolean tag() {
+    public boolean tag() {
         if (!tagged) {
             tagged = true;
+            System.out.println("I'm tagged:" + getUUID());
+            return tagged;
+        } else {
+            return false;
         }
-        return tagged;
     }
 
     @Override
-    public synchronized boolean passTag(Dexter toTag) {
+    public boolean passTag(BailiffInterface container, IdentifiedAgent toTag) {
         if (tagged && toTag.tag()) {
-            tagged = false;
+            tagged = !toTag.isTagged();
         }
         return !tagged;
     }
@@ -188,8 +217,14 @@ public class Dexter implements IdentifiedAgent, Serializable {
     }
 
 
-    private Set<BailiffInterface> getBailiffs() {
-        Set<BailiffInterface> toReturn;
+    private boolean move(BailiffInterface container, List<BailiffInterface> bailiffs) throws NoSuchMethodException, RemoteException {
+        BailiffInterface target = getBailiffToMove(bailiffs);
+        return target != null && migrateTo(container, target);
+    }
+
+
+    private List<BailiffInterface> getBailiffs() {
+        List<BailiffInterface> toReturn;
         int retryInterval = 0;
         ServiceItem[] svcItems;
         do {
@@ -209,7 +244,7 @@ public class Dexter implements IdentifiedAgent, Serializable {
             // If no lookup servers are found, go back up to the beginning
             // of the loop, sleep a bit and then try again.
         } while (svcItems.length == 0);
-        toReturn = new HashSet<>(svcItems.length);
+        toReturn = new ArrayList<>(svcItems.length);
         for (ServiceItem eachItem : svcItems) {
             Object obj = eachItem.service;
             if (obj instanceof BailiffInterface) {
@@ -223,12 +258,12 @@ public class Dexter implements IdentifiedAgent, Serializable {
                 }
             }
         }
+        Collections.shuffle(toReturn);
         return toReturn;
     }
 
-    private BailiffInterface getContainer() throws NoSuchMethodException, RemoteException {
-        Set<BailiffInterface> toChose = getBailiffs();
-        for (BailiffInterface option : toChose) {
+    private BailiffInterface getContainer(Collection<BailiffInterface> options) throws NoSuchMethodException, RemoteException {
+        for (BailiffInterface option : options) {
             if (option.getRunningChildren(this).containsKey(getUUID())) {
                 return option;
             }
@@ -238,16 +273,15 @@ public class Dexter implements IdentifiedAgent, Serializable {
     }
 
 
-    private boolean migrateTo(BailiffInterface migrateTo) {
+    private boolean migrateTo(BailiffInterface from, BailiffInterface migrateTo) {
         debugMsg("Trying to jump...");
         // This is the spot where Dexter tries to migrate.
         try {
-            BailiffInterface parent = getContainer();
-            if (parent != null) {
-                parent.leave(this);
+            if (from != null) {
+                from.leave(this);
             }
             migrateTo.migrate(this, "topLevel", new Object[]{});
-            SDM.terminate();    // SUCCESS
+            SDM.terminate();
             return true;
         } catch (java.rmi.RemoteException | NoSuchMethodException e) { // FAILURE
             if (debug) {
@@ -259,16 +293,15 @@ public class Dexter implements IdentifiedAgent, Serializable {
     }
 
 
-    private BailiffInterface getBailiffToMove() {
-        Set<BailiffInterface> toChose = getBailiffs();
-        BailiffInterface toReturn = null;
-        StringBuilder stringBuilder = new StringBuilder("Agent:" + getUUID() + " is ");
-        for (BailiffInterface option : toChose) {
-            try {
+    private BailiffInterface getBailiffToMove(Collection<BailiffInterface> options) {
+        try {
+            BailiffInterface toReturn = getContainer(options);
+            StringBuilder stringBuilder = new StringBuilder("Agent:" + getUUID() + " is ");
+            for (BailiffInterface option : options) {
                 if (tagged) {
                     stringBuilder.append("looking for agent to tag");
                     Map<UUID, IdentifiedAgent> optionChildren = option.getRunningChildren(this);
-                    if (!optionChildren.containsKey(getUUID()) && (toReturn == null || toReturn.getRunningChildren(this).size() < optionChildren.size())) {
+                    if (toReturn == null || toReturn.getRunningChildren(this).size() <= optionChildren.size()) {
                         toReturn = option;
                     }
                 } else {
@@ -285,11 +318,7 @@ public class Dexter implements IdentifiedAgent, Serializable {
                         toReturn = option;
                     }
                 }
-            } catch (RemoteException | NoSuchMethodException e) {
-                e.printStackTrace();
             }
-        }
-        try {
             if (toReturn != null) {
                 Map<UUID, IdentifiedAgent> targetChildren = toReturn.getRunningChildren(this);
                 if (targetChildren.containsKey(getUUID())) {
@@ -298,10 +327,6 @@ public class Dexter implements IdentifiedAgent, Serializable {
                     return null;
                 } else {
                     stringBuilder.append(", final target:").append(toReturn.ping());
-                    stringBuilder.append("\nNew host contains");
-                    for (UUID agent : targetChildren.keySet()) {
-                        stringBuilder.append("\n").append(agent);
-                    }
                     System.out.println(stringBuilder.toString());
                     return toReturn;
                 }

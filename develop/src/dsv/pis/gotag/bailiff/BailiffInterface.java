@@ -73,5 +73,7 @@ public interface BailiffInterface
             RemoteException,
             java.lang.NoSuchMethodException;
 
-
+    boolean tag(UUID from, UUID uuid)throws
+            RemoteException,
+            java.lang.NoSuchMethodException;
 }

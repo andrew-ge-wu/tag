@@ -235,12 +235,17 @@ public class Deedee implements Serializable ,IdentifiedAgent{
     }
 
     @Override
-    public boolean passTag(Dexter toTag) {
+    public boolean passTag(BailiffInterface container, IdentifiedAgent toTag) {
         return false;  //TODO:To be fixed
     }
 
     @Override
     public boolean isTagged() {
         return false;  //TODO:To be fixed
+    }
+
+    @Override
+    public void notify(NotificationType type, IdentifiedAgent who) {
+        //TODO:To be fixed
     }
 }

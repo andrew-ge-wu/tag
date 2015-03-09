@@ -11,6 +11,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.Map;
+import java.util.Random;
 import java.util.UUID;
 
 /**
@@ -110,9 +111,9 @@ public class BailiffFrame extends JFrame {
         // Determine actual sizes.
         Dimension d = Toolkit.getDefaultToolkit().getScreenSize();
         // The window is located 1/8th of the screen size from upper left corner.
-        setLocation(d.width / 8, d.height / 8);
+        setLocation(new Random().nextInt(d.width), new Random().nextInt(d.height));
         // The window is 1/12th wide, 1/10th high, or screen size.
-        setSize(new Dimension((d.width / 4), (d.height / 4)));
+        setSize(new Dimension((d.width / 3), (d.height / 2)));
         // Show it.
         setVisible(true);
     }
@@ -133,21 +134,23 @@ public class BailiffFrame extends JFrame {
         public void run() {
             System.out.println("Start GUI updater");
             while (true) {
-                model.clear();
-                try {
-                    if (bailiff.children.size() > 0) {
-                        for (Map.Entry<UUID, IdentifiedAgent> entry : bailiff.children.entrySet()) {
-                            model.addElement(entry.getKey().toString() + ": is tagged[" + entry.getValue().isTagged() + "]");
-                        }
-                    } else {
-                        model.addElement("No one is running on this bailiff");
-                    }
-                } finally {
-                    toUpdate.repaint();
+                synchronized (model) {
+                    model.clear();
                     try {
-                        Thread.sleep(Bailiff.OPT_DELAY/10);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
+                        if (bailiff.children.size() > 0) {
+                            for (Map.Entry<UUID, IdentifiedAgent> entry : bailiff.children.entrySet()) {
+                                model.addElement(entry.getKey().toString() + ": is tagged[" + entry.getValue().isTagged() + "]");
+                            }
+                        } else {
+                            model.addElement("No one is running on this bailiff");
+                        }
+                    } finally {
+                        toUpdate.repaint();
+                        try {
+                            Thread.sleep(Bailiff.OPT_DELAY / 10);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
                     }
                 }
             }
