@@ -296,11 +296,11 @@ public class Bailiff
                     + "\" args=\"" + args + "\"/>");
         }
         System.out.println("Agent:" + obj.getUUID() + " is joining, current running:" + children.size());
+        children.put(obj.getUUID(), obj);
+        notifyAllAgents(IdentifiedAgent.NotificationType.JOINING, obj);
         Agitator agt = new Agitator(obj, cb, args);
         agt.initialize();
         agt.start();
-        children.put(obj.getUUID(), obj);
-        notifyAllAgents(IdentifiedAgent.NotificationType.JOINING, obj);
     }
 
     @Override

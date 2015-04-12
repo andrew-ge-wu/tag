@@ -70,7 +70,7 @@ public class Dexter implements IdentifiedAgent, Serializable {
      * template IS serializable so Dexter only needs to instantiate it once.
      */
     protected ServiceTemplate bailiffTemplate;
-    private List<BailiffInterface> bailiffs;
+    private transient List<BailiffInterface> bailiffs;
 
     /**
      * Outputs a diagnostic message on standard output. This will be on
@@ -185,8 +185,10 @@ public class Dexter implements IdentifiedAgent, Serializable {
     @Override
     public void init() {
         try {
-            SDM = new ServiceDiscoveryManager(null, null);
-            this.bailiffs = getBailiffs();
+            if (!isInitialized()) {
+                if (SDM == null) SDM = new ServiceDiscoveryManager(null, null);
+                if (bailiffs == null || bailiffs.isEmpty()) bailiffs = getBailiffs();
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -223,6 +225,11 @@ public class Dexter implements IdentifiedAgent, Serializable {
 
     @Override
     public void notify(NotificationType type, IdentifiedAgent who) {
+    }
+
+    @Override
+    public boolean isInitialized() {
+        return SDM != null && bailiffs != null;
     }
 
 
@@ -318,7 +325,7 @@ public class Dexter implements IdentifiedAgent, Serializable {
                     boolean containsTagged = false;
                     Map<UUID, IdentifiedAgent> optionChildren = option.getRunningChildren(this);
                     for (IdentifiedAgent eachChild : optionChildren.values()) {
-                        if (eachChild.isTagged()) {
+                        if (eachChild.isInitialized() && eachChild.isTagged()) {
                             containsTagged = true;
                             break;
                         }

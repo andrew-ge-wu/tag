@@ -253,4 +253,9 @@ public class Deedee implements Serializable, IdentifiedAgent {
     public void notify(NotificationType type, IdentifiedAgent who) {
         //TODO:To be fixed
     }
+
+    @Override
+    public boolean isInitialized() {
+        return false;
+    }
 }

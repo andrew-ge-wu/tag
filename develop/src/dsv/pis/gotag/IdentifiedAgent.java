@@ -21,4 +21,6 @@ public interface IdentifiedAgent {
     boolean isTagged();
 
     void notify(NotificationType type, IdentifiedAgent who);
+
+    boolean isInitialized();
 }
