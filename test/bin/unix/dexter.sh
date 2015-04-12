@@ -33,4 +33,4 @@ unset CLASSPATH
 
 IPV=-Djava.net.preferIPv4Stack=true
 
-java -Djava.security.policy=$PCY $IPV  -Djava.rmi.server.useCodebaseOnly=false -Djava.rmi.server.codebase="$CBS" -jar $JRN $JAR $*
+java -Djava.security.policy=$PCY $IPV  -Djava.rmi.server.useCodebaseOnly=false -Djava.rmi.server.codebase="$CBS" -jar $JRN $JAR -noface $*

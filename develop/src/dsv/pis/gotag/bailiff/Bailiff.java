@@ -10,7 +10,6 @@ import dsv.pis.gotag.IdentifiedAgent;
 import dsv.pis.gotag.util.CmdlnOption;
 import dsv.pis.gotag.util.Commandline;
 import dsv.pis.gotag.util.Logger;
-import dsv.pis.gotag.util.Sleeper;
 import net.jini.core.entry.Entry;
 import net.jini.core.lookup.ServiceID;
 import net.jini.lookup.JoinManager;
@@ -182,6 +181,7 @@ public class Bailiff
             } else {
                 myParms = null;
             }
+            myObj.init();
         }
 
         /**
@@ -203,7 +203,6 @@ public class Bailiff
          */
         public void run() {
             try {
-                Sleeper.sleep(OPT_DELAY / 10, OPT_DELAY / 4);
                 myMethod.invoke(myObj, myArgs);
             } catch (Throwable t) {
                 if (debug) {
@@ -296,12 +295,12 @@ public class Bailiff
             log.entry("<migrate obj=\"" + obj + "\" cb=\"" + cb
                     + "\" args=\"" + args + "\"/>");
         }
-        notifyAllAgents(IdentifiedAgent.NotificationType.JOINING, obj);
-        children.put(obj.getUUID(), obj);
         System.out.println("Agent:" + obj.getUUID() + " is joining, current running:" + children.size());
         Agitator agt = new Agitator(obj, cb, args);
         agt.initialize();
         agt.start();
+        children.put(obj.getUUID(), obj);
+        notifyAllAgents(IdentifiedAgent.NotificationType.JOINING, obj);
     }
 
     @Override
@@ -313,7 +312,6 @@ public class Bailiff
     @Override
     public void leave(IdentifiedAgent who) throws RemoteException, NoSuchMethodException {
         notifyAllAgents(IdentifiedAgent.NotificationType.LEAVING, who);
-        Sleeper.sleep(OPT_DELAY / 10, OPT_DELAY / 4);
         System.out.println("Agent:" + who.getUUID() + " is leaving");
         children.remove(who.getUUID());
     }
@@ -325,7 +323,7 @@ public class Bailiff
                 && children.get(from).isTagged() && !children.get(to).isTagged()) {
             IdentifiedAgent fromChild = children.get(from);
             IdentifiedAgent toChild = children.get(to);
-            fromChild.passTag(this, toChild);
+            fromChild.passTag(toChild);
             return toChild.isTagged();
         } else {
             return false;
@@ -401,6 +399,7 @@ public class Bailiff
      */
     public void shutdown() {
         bf_joinmanager.terminate();
+        System.exit(0);
     }
 
     /**

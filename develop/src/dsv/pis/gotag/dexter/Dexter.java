@@ -22,6 +22,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.IOException;
 import java.io.Serializable;
 import java.rmi.RemoteException;
 import java.util.*;
@@ -33,7 +34,7 @@ import java.util.List;
  * evolved agents.
  */
 public class Dexter implements IdentifiedAgent, Serializable {
-    public static final int OPT_DELAY = 1000;
+    public static final int OPT_DELAY = 3000;
 
     private final UUID uuid = UUID.randomUUID();
 
@@ -121,10 +122,9 @@ public class Dexter implements IdentifiedAgent, Serializable {
      */
     public void topLevel()
             throws
-            java.io.IOException, InterruptedException {
+            IOException, InterruptedException {
         // Create a Jini service discovery manager to help us interact with
         // the Jini lookup service.
-        SDM = new ServiceDiscoveryManager(null, null);
 
         DexterFace dexFace = null;
         JFrame f = null;
@@ -146,11 +146,11 @@ public class Dexter implements IdentifiedAgent, Serializable {
             dexFace.startAnimation();
         }
         try {
-            this.bailiffs = getBailiffs();
             BailiffInterface container = getContainer(bailiffs);
-            if (tagged) {
-                if (container != null) {
-                    do {
+            if (container != null) {
+                while (true) {
+                    if (tagged && container.getRunningChildren(this).size() > 1) {
+                        System.out.println("Started tagging!");
                         Map<UUID, IdentifiedAgent> children = container.getRunningChildren(this);
                         children.remove(getUUID());
                         if (children.size() > 0) {
@@ -162,24 +162,33 @@ public class Dexter implements IdentifiedAgent, Serializable {
                                 System.out.println("Failed to tag!");
                             }
                         }
+                    } else if (move(container, bailiffs)) {
+                        return;
+                    } else {
+                        Sleeper.sleep(OPT_DELAY / 4, OPT_DELAY);
                     }
-                    while (tagged && container.getRunningChildren(this).size() > 1);
-                }
+                } // for ever // go back up and try to find more Bailiffs
+            } else {
+                move(null, bailiffs);
             }
-            while (true) {
-                container = getContainer(bailiffs);
-                if (container != null) Sleeper.sleep(OPT_DELAY / 4, OPT_DELAY);
-                if (move(container, bailiffs)) {
-                    if (!noFace && dexFace != null) {
-                        dexFace.stopAnimation();
-                        f.setVisible(false);
-
-                    }
-                    return;
-                }
-            } // for ever // go back up and try to find more Bailiffs
         } catch (NoSuchMethodException e) {
             throw new RuntimeException(e);
+        } finally {
+            if (!noFace && dexFace != null) {
+                dexFace.stopAnimation();
+                f.setVisible(false);
+            }
+        }
+    }
+
+
+    @Override
+    public void init() {
+        try {
+            SDM = new ServiceDiscoveryManager(null, null);
+            this.bailiffs = getBailiffs();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -200,9 +209,9 @@ public class Dexter implements IdentifiedAgent, Serializable {
     }
 
     @Override
-    public boolean passTag(BailiffInterface container, IdentifiedAgent toTag) {
-        if (tagged && toTag.tag()) {
-            tagged = !toTag.isTagged();
+    public boolean passTag(IdentifiedAgent toTag) {
+        if (toTag.tag()) {
+            tagged = false;
         }
         return !tagged;
     }
@@ -299,13 +308,13 @@ public class Dexter implements IdentifiedAgent, Serializable {
             StringBuilder stringBuilder = new StringBuilder("Agent:" + getUUID() + " is ");
             for (BailiffInterface option : options) {
                 if (tagged) {
-                    stringBuilder.append("looking for agent to tag");
+                    stringBuilder.append("\nlooking for agent to tag");
                     Map<UUID, IdentifiedAgent> optionChildren = option.getRunningChildren(this);
                     if (toReturn == null || toReturn.getRunningChildren(this).size() <= optionChildren.size()) {
                         toReturn = option;
                     }
                 } else {
-                    stringBuilder.append("running away");
+                    stringBuilder.append("\nrunning away");
                     boolean containsTagged = false;
                     Map<UUID, IdentifiedAgent> optionChildren = option.getRunningChildren(this);
                     for (IdentifiedAgent eachChild : optionChildren.values()) {
@@ -322,7 +331,7 @@ public class Dexter implements IdentifiedAgent, Serializable {
             if (toReturn != null) {
                 Map<UUID, IdentifiedAgent> targetChildren = toReturn.getRunningChildren(this);
                 if (targetChildren.containsKey(getUUID())) {
-                    stringBuilder.append(", no changing bailiff");
+                    stringBuilder = new StringBuilder("No changing bailiff");
                     System.out.println(stringBuilder.toString());
                     return null;
                 } else {
@@ -344,7 +353,7 @@ public class Dexter implements IdentifiedAgent, Serializable {
     public static void main(String[] argv)
             throws
             java.lang.ClassNotFoundException,
-            java.io.IOException, InterruptedException {
+            IOException, InterruptedException {
         CmdlnOption helpOption = new CmdlnOption("-help");
         CmdlnOption debugOption = new CmdlnOption("-debug");
         CmdlnOption noFaceOption = new CmdlnOption("-noface");
@@ -375,6 +384,7 @@ public class Dexter implements IdentifiedAgent, Serializable {
         // We will try without it first
         // System.setSecurityManager (new RMISecurityManager ());
         Dexter dx = new Dexter(debug, noFace, tag);
+        dx.init();
         dx.topLevel();
         System.exit(0);
     }

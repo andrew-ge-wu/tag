@@ -28,7 +28,7 @@ import java.util.UUID;
  * registered to a particular user (started with the -user switch).
  * When she finds one, she migrates there and pops a dialogue with her message.
  */
-public class Deedee implements Serializable ,IdentifiedAgent{
+public class Deedee implements Serializable, IdentifiedAgent {
 
     /**
      * The service discovery manager helps us locating Jini lookup servers
@@ -225,6 +225,11 @@ public class Deedee implements Serializable ,IdentifiedAgent{
     }
 
     @Override
+    public void init() {
+        //TODO:To be fixed
+    }
+
+    @Override
     public UUID getUUID() {
         return null;  //TODO:To be fixed
     }
@@ -235,7 +240,7 @@ public class Deedee implements Serializable ,IdentifiedAgent{
     }
 
     @Override
-    public boolean passTag(BailiffInterface container, IdentifiedAgent toTag) {
+    public boolean passTag(IdentifiedAgent toTag) {
         return false;  //TODO:To be fixed
     }
 
